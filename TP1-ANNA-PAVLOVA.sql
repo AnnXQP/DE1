@@ -495,9 +495,9 @@ TABLE parties_analytics;
 
 DROP VIEW IF EXISTS Prague;
 CREATE VIEW `Prague` AS
-SELECT * 
-FROM parties_analytics 
+SELECT * FROM parties_analytics 
 WHERE ZIP BETWEEN 10000 AND 19999;
+SELECT * FROM Prague; 
 
 
 
