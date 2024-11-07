@@ -476,7 +476,6 @@ SELECT * FROM parties_analytics
 WHERE ZIP BETWEEN 10000 AND 19999;
 SELECT * FROM Prague;
 
-DROP TABLE Klatovy;
 DROP VIEW IF EXISTS Klatovy;
 CREATE VIEW Klatovy AS
 SELECT * FROM parties_analytics 
