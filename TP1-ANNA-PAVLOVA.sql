@@ -1,6 +1,7 @@
 -- TERM PROJECT 1: Artificial Data from a Czech Bank
+-- By Anna Pavlova, MS SDS
 -- OPERATIONAL LAYER
-	-- Loading the data using import/export 
+	-- Loading the data using import/export from retational dataset repository 
 CREATE SCHEMA cs; 
 USE cs;
 TABLE ACCOUNTS;
@@ -13,6 +14,11 @@ TABLE PRODUCTS;
 TABLE target_churn; 
 
 DESCRIBE ACCOUNT_TRANSACTIONS;  
+
+-- ANALYTICS: Analytics Plan
+-- Based on selected data it could think of analyzing transaction patterns by currency, transaction type, and product.
+-- Conduct regional and demographic insights based on ZIP code and client details. 
+-- In addition, to provide a calculation of transaction values and its categories: low, medium, high. It might be applicable for fraud detection, and risk reductions whent it comes to high value transfers. 
 
 -- ANALYTICAL LAYER
 CREATE TABLE account_analytics AS
@@ -46,7 +52,7 @@ ON t1.ACCTP_KEY = t2.ACCTP_KEY;
 DESCRIBE account_analytics; 
 DESCRIBE parties_analytics; 
 
--- STORING 
+-- ETL USING STORED PROCEDURES 
 
 DROP PROCEDURE IF EXISTS GetTotalTransactionAmountByCurrency;
 
@@ -73,44 +79,22 @@ DELIMITER ;
 CALL GetTotalTransactionAmountByCurrency('CZK', @totalAmountCZK, @totalAmountFX);
 SELECT @totalAmountCZK, @totalAmountFX;
 
-DROP PROCEDURE IF EXISTS GetTransactionsByAgendaName;
+DROP PROCEDURE IF EXISTS GetTransactionsByProduct;
 
 DELIMITER $$
 
-CREATE PROCEDURE GetTransactionsByAgendaName (
+CREATE PROCEDURE GetTransactionsByProduct (
     IN agendaName VARCHAR(255)
 )
 BEGIN
-    SELECT 
-        PROD_KEY,
-        ACC_KEY,
-        ACCTP_KEY,
-        ACCTRN_KEY,
-        ACTRNTP_KEY,
-        ACCTRN_ACCOUNTING_DATE,
-        ACCTRN_AMOUNT_CZK,
-        ACCTRN_AMOUNT_FX,
-        CURR_ISO_CODE,
-        ACCTRN_CRDR_FLAG,
-        ACCTRN_CASH_FLAG,
-        ACCTRN_INTEREST_FLAG,
-        ACCTRN_TAX_FLAG,
-        ACCTRN_FEE_FLAG,
-        ACC_OTHER_ACCOUNT_KEY,
-        ACCTP_OTHER_ACCOUNT_KEY,
-        ORG_KEY,
-        PT_UNIFIED_KEY,
-        ACCH_OPEN_DATE,
-        ACCH_CLOSE_DATE,
-        PROD_AGENDA_CODE,
-        PROD_AGENDA_NAME
+    SELECT *
     FROM account_analytics
     WHERE PROD_AGENDA_NAME = agendaName;
 END$$
 
 DELIMITER ;
 
-CALL GetTransactionsByAgendaName('Produkt 88275');
+CALL GetTransactionsByProduct('Produkt 88275');
 
 DROP PROCEDURE IF EXISTS GetTransactionsByCashAndDebitCredit;
 
@@ -142,10 +126,8 @@ BEGIN
 END$$
 
 DELIMITER ;
-CALL GetTransactionsByCashAndDebitCredit('Y');
+CALL GetTransactionsByCashAndDebitCredit('N');
 
-TABLE account_analytics; 
-TABLE parties_analytics;
 
 DROP PROCEDURE IF EXISTS GetSenderCategoryByAmountFX;
 
@@ -157,10 +139,12 @@ CREATE PROCEDURE GetSenderCategoryByAmountFX(
 )
 BEGIN
     DECLARE amountFX DECIMAL DEFAULT 0;
-    SELECT ACCTRN_AMOUNT_FX 
-    INTO amountFX
-    FROM account_analytics
-    WHERE ACCTRN_KEY = pTransactionID;
+SELECT 
+    ACCTRN_AMOUNT_FX
+INTO amountFX FROM
+    account_analytics
+WHERE
+    ACCTRN_KEY = pTransactionID;
     IF amountFX > -100000 THEN
         SET pSenderCategory = 'HIGH';
     ELSEIF amountFX > -50000 THEN
@@ -173,9 +157,7 @@ END$$
 DELIMITER ;
 
 CALL GetSenderCategoryByAmountFX(5781198977, @pSenderCategory);
-SELECT @pSenderCategory; 
-
-TABLE parties_analytics;
+SELECT @pSenderCategory;         -- as an output we get 'HIGH': sender category based on transaction amount 
 
 DROP PROCEDURE IF EXISTS GetClientCategoryByCzechZIP;
 
@@ -193,7 +175,7 @@ BEGIN
     FROM parties_analytics
     WHERE PT_UNIFIED_KEY = pClientID;
 
-    IF zipCode BETWEEN 10000 AND 19999 THEN
+    IF zipCode BETWEEN 10000 AND 19999 THEN   -- used publicly avaliable data to transform ZIPs to regions since cities couldn't tell much about clients segmentation. 
         SET pClientCategory = 'PRAGUE';
     ELSEIF zipCode BETWEEN 20000 AND 29999 THEN
         SET pClientCategory = 'CENTRAL_BOHEMIA';
@@ -217,9 +199,7 @@ END$$
 DELIMITER ;
 
 CALL GetClientCategoryByCzechZIP(2326500, @pClientCategory);
-SELECT @pClientCategory;
-
-
+SELECT @pClientCategory;      -- Client is from Prague :) 
 
 DROP PROCEDURE IF EXISTS GetClientsByAgeGenderAndRegion;
 
@@ -264,10 +244,8 @@ BEGIN
 END$$
 
 DELIMITER ;
-CALL GetClientsByAgeGenderAndRegion('ADULT', 'Z');
 
-TABLE parties_analytics; 
-TABLE account_analytics;
+CALL GetClientsByAgeGenderAndRegion('ADULT', 'Z');  -- there are two female adults in North Movara and Central Bohemia respectively. 
 
 -- EVENT: ACCOUNT RELATED ANALYTICS 
 DROP EVENT IF EXISTS GenerateTransactionEntries;
@@ -361,7 +339,6 @@ END$$
 DELIMITER ;
 SET GLOBAL event_scheduler = ON;
 
-
 -- TRIGGER 
 
 DELIMITER $$
@@ -429,7 +406,6 @@ SELECT * FROM account_analytics
 WHERE ACCTRN_AMOUNT_CZK > -10000 OR ACCTRN_AMOUNT_FX > -10000;
 SELECT * FROM High_Value_Transactions;
 
-
 DROP VIEW IF EXISTS Currency;
 CREATE VIEW `Currency` AS
 SELECT * FROM account_analytics WHERE CURR_ISO_CODE = 'CZK';
@@ -469,7 +445,9 @@ DO
             WHEN RAND() > 0.5 THEN 'M'                   -- PSGEN_UNIFIED_ID: 'M' for male, 'Z' for female
             ELSE 'Z'
         END,
-        CONCAT('ORG-', FLOOR(RAND() * 10000)),           -- ORGH_UNIFIED_ID (randomized org unique ID prefix)
+        CONCAT(
+			CASE WHEN RAND() < 0.5 THEN 'EX0_' ELSE 'HR0_' END,
+			FLOOR(RAND() * 10000)),           -- ORGH_UNIFIED_ID (randomized org unique ID prefix)
         CASE 
             WHEN RAND() < 0.25 THEN 'Prague'
             WHEN RAND() < 0.5 THEN 'Brno'
@@ -488,16 +466,24 @@ $$
 DELIMITER ;
 
 SET GLOBAL event_scheduler = ON;
-
-TABLE parties_analytics;
+TABLE parties_analytics; 
 
 -- DATA MART
 
 DROP VIEW IF EXISTS Prague;
-CREATE VIEW `Prague` AS
+CREATE VIEW Prague AS
 SELECT * FROM parties_analytics 
 WHERE ZIP BETWEEN 10000 AND 19999;
-SELECT * FROM Prague; 
+SELECT * FROM Prague;
+
+DROP TABLE Klatovy;
+DROP VIEW IF EXISTS Klatovy;
+CREATE VIEW Klatovy AS
+SELECT * FROM parties_analytics 
+WHERE ZIP BETWEEN 30000 AND 39999;
+SELECT * FROM Klatovy;
+
+
 
 
 
